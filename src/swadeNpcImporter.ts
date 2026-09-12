@@ -36,102 +36,126 @@ Hooks.on('ready', async () => {
   }
 });
 
-Hooks.on('renderActorDirectory', async (app: any, html: any, _data: any) => {
-  if (canCreateActor()) {
-    const npcImporterButton = $(
-      `<button id="StatBlockImporterButton" style="width: calc(100% - 8px);"><i class="fas fa-align-left"></i>${foundryI18nLocalize(
-        'npcImporter.HTML.StatBlockImporterTitle',
-      )}</button>`,
-    );
+Hooks.on('renderActorDirectory', async (_app: any, html: any, _data: any) => {
+  if (!canCreateActor()) return;
 
-    $(html).find('.directory-footer').append(npcImporterButton);
+  // ActorDirectory is an ApplicationV2 app in current Foundry versions.
+  // ApplicationV2 render hooks provide an HTMLElement instead of the old
+  // jQuery object, so normalize either shape for backwards compatibility.
+  const root = html instanceof HTMLElement ? html : html?.[0];
+  if (!(root instanceof HTMLElement)) {
+    Logger.warn('Unable to find the Actor Directory HTML root.');
+    return;
+  }
 
-    npcImporterButton.on('click', async () => {
-      new foundry.applications.api.DialogV2({
-        window: {
-          title: foundryI18nLocalize('npcImporter.HTML.ImportTitle'),
-          resizable: true,
-        },
-        position: {
-          width: 400,
-        },
-        content: await importerDialog(),
-        buttons: [
-          {
-            action: 'importActor',
-            label: foundryI18nLocalize('npcImporter.HTML.Import'),
-            default: true,
-            callback: async (_html: any) => {
-              try {
-                let importSettings: ImportSettings = {
-                  actorType:
+  // The directory can re-render, and V14 directories can also be popped out.
+  // Only add one importer button to each rendered Actor Directory instance.
+  if (root.querySelector('[data-swade-stat-block-importer]')) return;
+
+  const footer = root.querySelector('.directory-footer');
+  if (!footer) {
+    Logger.warn('Unable to find the Actor Directory footer.');
+    return;
+  }
+
+  // Use the rendered directory's ownerDocument so this also works when the
+  // Actor Directory is detached into a separate browser window in Foundry V14.
+  const doc = root.ownerDocument;
+  const npcImporterButton = doc.createElement('button');
+  npcImporterButton.type = 'button';
+  npcImporterButton.dataset.swadeStatBlockImporter = 'true';
+  npcImporterButton.style.width = 'calc(100% - 8px)';
+  npcImporterButton.innerHTML = `<i class="fas fa-align-left"></i>${foundryI18nLocalize(
+    'npcImporter.HTML.StatBlockImporterTitle',
+  )}`;
+
+  footer.append(npcImporterButton);
+
+  npcImporterButton.addEventListener('click', async () => {
+    new foundry.applications.api.DialogV2({
+      window: {
+        title: foundryI18nLocalize('npcImporter.HTML.ImportTitle'),
+        resizable: true,
+      },
+      position: {
+        width: 400,
+      },
+      content: await importerDialog(),
+      buttons: [
+        {
+          action: 'importActor',
+          label: foundryI18nLocalize('npcImporter.HTML.Import'),
+          default: true,
+          callback: async (_html: any) => {
+            try {
+              let importSettings: ImportSettings = {
+                actorType:
+                  (
+                    document.querySelector(
+                      'input[name="actorType"]:checked',
+                    ) as HTMLInputElement | null
+                  )?.value ?? '',
+                isWildCard: !!(
+                  document.getElementById(
+                    'swade-stat-imp-isWildCard',
+                  ) as HTMLInputElement | null
+                )?.checked,
+                tokenSettings: {
+                  disposition: parseInt(
                     (
                       document.querySelector(
-                        'input[name="actorType"]:checked',
+                        'input[name="disposition"]:checked',
                       ) as HTMLInputElement | null
-                    )?.value ?? '',
-                  isWildCard: !!(
+                    )?.value ?? '0',
+                  ),
+                  vision: !!(
                     document.getElementById(
-                      'swade-stat-imp-isWildCard',
+                      'swade-stat-imp-vision',
                     ) as HTMLInputElement | null
                   )?.checked,
-                  tokenSettings: {
-                    disposition: parseInt(
-                      (
-                        document.querySelector(
-                          'input[name="disposition"]:checked',
-                        ) as HTMLInputElement | null
-                      )?.value ?? '0',
-                    ),
-                    vision: !!(
-                      document.getElementById(
-                        'swade-stat-imp-vision',
-                      ) as HTMLInputElement | null
-                    )?.checked,
-                    visionRange: parseInt(
-                      (
-                        document.querySelector(
-                          'input[name="visionRange"]',
-                        ) as HTMLInputElement | null
-                      )?.value ?? '0',
-                    ),
-                    visionAngle: parseInt(
-                      (
-                        document.querySelector(
-                          'input[name="visionAngle"]',
-                        ) as HTMLInputElement | null
-                      )?.value ?? '360',
-                    ),
-                  },
-                  saveFolder:
+                  visionRange: parseInt(
                     (
-                      document.getElementById(
-                        'swade-stat-imp-save-folder',
+                      document.querySelector(
+                        'input[name="visionRange"]',
                       ) as HTMLInputElement | null
-                    )?.value ?? '',
-                };
-                const statBlock = (
-                  document.getElementById('statBlock') as
-                    | HTMLInputElement
-                    | undefined
-                )?.value;
-                await buildActor(importSettings, statBlock);
-              } catch (err) {
-                Logger.error('Import failed:', err);
-                foundryUiError(
-                  foundryI18nLocalize('npcImporter.HTML.FailedToImport'),
-                );
-              }
-            },
+                    )?.value ?? '0',
+                  ),
+                  visionAngle: parseInt(
+                    (
+                      document.querySelector(
+                        'input[name="visionAngle"]',
+                      ) as HTMLInputElement | null
+                    )?.value ?? '360',
+                  ),
+                },
+                saveFolder:
+                  (
+                    document.getElementById(
+                      'swade-stat-imp-save-folder',
+                    ) as HTMLInputElement | null
+                  )?.value ?? '',
+              };
+              const statBlock = (
+                document.getElementById('statBlock') as
+                  | HTMLInputElement
+                  | undefined
+              )?.value;
+              await buildActor(importSettings, statBlock);
+            } catch (err) {
+              Logger.error('Import failed:', err);
+              foundryUiError(
+                foundryI18nLocalize('npcImporter.HTML.FailedToImport'),
+              );
+            }
           },
-          {
-            action: 'cancel',
-            label: foundryI18nLocalize('npcImporter.HTML.Cancel'),
-          },
-        ],
-      }).render({ force: true });
-    });
-  }
+        },
+        {
+          action: 'cancel',
+          label: foundryI18nLocalize('npcImporter.HTML.Cancel'),
+        },
+      ],
+    }).render({ force: true });
+  });
 });
 
 async function importerDialog(): Promise<string> {
